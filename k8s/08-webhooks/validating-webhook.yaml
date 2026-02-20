@@ -1,0 +1,20 @@
+# Reject pods that request more than 1 nvidia.com/gpu
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: gpu-validating
+webhooks:
+  - name: gpu-validating.example.com
+    clientConfig:
+      service:
+        namespace: gpu-webhook
+        name: gpu-webhook
+        path: /validate
+    rules:
+      - operations: ["CREATE", "UPDATE"]
+        apiGroups: [""]
+        apiVersions: ["v1"]
+        resources: ["pods"]
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail

@@ -1,0 +1,15 @@
+# Should be rejected by validating webhook (>1 GPU)
+apiVersion: v1
+kind: Pod
+metadata:
+  name: rejected-2gpu
+  namespace: default
+spec:
+  restartPolicy: Never
+  containers:
+    - name: cuda
+      image: nvidia/cuda:12.0.0-base-ubuntu22.04
+      command: ["nvidia-smi"]
+      resources:
+        limits:
+          nvidia.com/gpu: "2"

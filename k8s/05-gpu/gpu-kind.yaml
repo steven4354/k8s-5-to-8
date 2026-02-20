@@ -1,0 +1,13 @@
+# Multi-node Kind cluster for GPU workloads (Project 5).
+# Use: kind create cluster --config k8s/05-gpu/gpu-kind.yaml
+# For real GPU passthrough you need host GPU + nvidia-container-toolkit and
+# kind with containerd config that exposes GPU (see blog outline).
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+
+nodes:
+  - role: control-plane
+  - role: worker
+    # Optional: use for GPU node if host has NVIDIA GPU
+    # labels and taints can be applied after cluster creation
+  - role: worker

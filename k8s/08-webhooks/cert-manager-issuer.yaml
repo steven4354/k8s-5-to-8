@@ -1,0 +1,22 @@
+# cert-manager Issuer and Certificate for webhook TLS (Project 8).
+# Install cert-manager first: helm install cert-manager jetstack/cert-manager -n cert-manager --create-namespace
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: selfsigned-issuer
+  namespace: gpu-webhook
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: gpu-webhook-tls
+  namespace: gpu-webhook
+spec:
+  secretName: gpu-webhook-tls
+  issuerRef:
+    name: selfsigned-issuer
+  dnsNames:
+    - gpu-webhook.gpu-webhook.svc
+    - gpu-webhook.gpu-webhook.svc.cluster.local

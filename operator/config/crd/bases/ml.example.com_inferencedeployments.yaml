@@ -1,0 +1,48 @@
+# InferenceDeployment CRD (Project 7). Generate with: make generate manifests
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: inferencedeployments.ml.example.com
+spec:
+  group: ml.example.com
+  names:
+    kind: InferenceDeployment
+    listKind: InferenceDeploymentList
+    plural: inferencedeployments
+    singular: inferencedeployment
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                replicas:
+                  type: integer
+                  minimum: 0
+                model:
+                  type: string
+                image:
+                  type: string
+                port:
+                  type: integer
+                resources:
+                  type: object
+                nodeSelector:
+                  type: object
+                  additionalProperties:
+                    type: string
+            status:
+              type: object
+              properties:
+                readyReplicas:
+                  type: integer
+                phase:
+                  type: string
+      subresources:
+        status: {}

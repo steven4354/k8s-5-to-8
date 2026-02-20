@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gpu-webhook
+  namespace: gpu-webhook
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gpu-webhook
+  template:
+    metadata:
+      labels:
+        app: gpu-webhook
+    spec:
+      containers:
+        - name: webhook
+          image: gpu-webhook:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8443
+          volumeMounts:
+            - name: tls
+              mountPath: /tls
+              readOnly: true
+          env:
+            - name: PORT
+              value: "8443"
+      volumes:
+        - name: tls
+          secret:
+            secretName: gpu-webhook-tls
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gpu-webhook
+  namespace: gpu-webhook
+spec:
+  selector:
+    app: gpu-webhook
+  ports:
+    - port: 443
+      targetPort: 8443

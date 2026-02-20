@@ -1,0 +1,3 @@
+# Minimal deps for fake ML endpoint (torch stub for tensor ops)
+torch>=2.0.0
+flask>=2.0.0

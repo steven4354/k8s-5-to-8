@@ -1,0 +1,58 @@
+# vLLM Deployment for LLM inference (Project 6). Port 8000; mount HF cache PVC.
+# Requires GPU nodes. Adjust image/model and resources for your cluster.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm
+  namespace: vllm
+  labels:
+    app: vllm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vllm
+  template:
+    metadata:
+      labels:
+        app: vllm
+    spec:
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:latest
+          args:
+            - "--model=meta-llama/Llama-2-7b-chat-hf"
+            - "--host=0.0.0.0"
+            - "--port=8000"
+          ports:
+            - containerPort: 8000
+              name: http
+          env:
+            - name: HUGGING_FACE_HUB_CACHE
+              value: /data
+          volumeMounts:
+            - name: cache
+              mountPath: /data
+          resources:
+            requests:
+              memory: "16Gi"
+              nvidia.com/gpu: "1"
+            limits:
+              memory: "24Gi"
+              nvidia.com/gpu: "1"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 60
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 120
+            periodSeconds: 30
+      volumes:
+        - name: cache
+          persistentVolumeClaim:
+            claimName: vllm-hf-cache

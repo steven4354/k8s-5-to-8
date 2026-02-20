@@ -1,0 +1,14 @@
+# PVC for vLLM model cache (Hugging Face). Apply namespace.yaml first.
+# Use a StorageClass with ReadWriteMany if you scale vLLM replicas.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: vllm-hf-cache
+  namespace: vllm
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi
+  # storageClassName: standard   # adjust for your cluster

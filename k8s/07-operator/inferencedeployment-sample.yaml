@@ -1,0 +1,21 @@
+# Sample InferenceDeployment CR (Project 7). Apply after installing the operator and CRD.
+apiVersion: ml.example.com/v1alpha1
+kind: InferenceDeployment
+metadata:
+  name: llama-sample
+  namespace: default
+spec:
+  replicas: 1
+  model: "meta-llama/Llama-2-7b-chat-hf"
+  image: vllm/vllm-openai:latest
+  port: 8000
+  # Optional: node affinity for GPU nodes
+  # nodeSelector:
+  #   nvidia.com/gpu.present: "true"
+  resources:
+    requests:
+      memory: "16Gi"
+      nvidia.com/gpu: "1"
+    limits:
+      memory: "24Gi"
+      nvidia.com/gpu: "1"
