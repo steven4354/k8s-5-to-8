@@ -15,6 +15,9 @@ A10
 No filesystem attachment
 Any region
 
+This repo assumes a **single Lambda spot GPU VM** running **Kind** locally (not a managed Lambda Kubernetes cluster).
+Quickstart: `scripts/lambda-labs-quickstart.sh` (or `scripts/p5.sh`).
+
 ---
 
 ## System requirements
