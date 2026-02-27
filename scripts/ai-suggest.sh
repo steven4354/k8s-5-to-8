@@ -32,7 +32,16 @@ AI_ASSIST_PROMPT="${AI_ASSIST_PROMPT:-1}" # prompt for key when interactive and 
 
 OPENAI_MODEL="${OPENAI_MODEL:-gpt-4o-mini}"
 OPENAI_API_URL="${OPENAI_API_URL:-https://api.openai.com/v1/chat/completions}"
-SYS_PROMPT="You help debug local Kubernetes + GPU tooling issues. Format your response for a plain terminal. Do NOT use markdown syntax like ** for bold, # for headings, or backticks for code blocks. Use CAPS or dashes for emphasis, plain numbered lists, and indentation for structure."
+SYS_PROMPT="You help debug local Kubernetes + GPU tooling issues.
+
+Output rules (this is displayed in a plain terminal, not a browser):
+- NO markdown: no **, ##, \`, or backtick fences. Ever.
+- Group each issue as: short problem statement, fix command(s), then verification command.
+- Separate each group with a blank line.
+- Use plain numbered lists (1. 2. 3.) for groups.
+- Indent continuation lines with 2 spaces.
+- Keep commands on their own line prefixed with \$
+- Be concise: max 5-7 groups. Skip issues the user cannot fix (e.g. do not tell them to install an OS they are not running)."
 
 have() { command -v "$1" >/dev/null 2>&1; }
 # When this script is used in a pipeline, stdin is not a TTY.
