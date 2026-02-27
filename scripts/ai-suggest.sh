@@ -22,6 +22,9 @@ fi
 
 set -uo pipefail
 
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+KEY_FILE="${REPO_ROOT}/.openai-api-key"
+
 TITLE="AI Suggestions (optional)"
 
 AI_ASSIST="${AI_ASSIST:-}"                 # set to 1 to force AI (requires key); 0 to disable prompts
@@ -29,6 +32,7 @@ AI_ASSIST_PROMPT="${AI_ASSIST_PROMPT:-1}" # prompt for key when interactive and 
 
 OPENAI_MODEL="${OPENAI_MODEL:-gpt-4o-mini}"
 OPENAI_API_URL="${OPENAI_API_URL:-https://api.openai.com/v1/chat/completions}"
+SYS_PROMPT="You help debug local Kubernetes + GPU tooling issues. Format your response for a plain terminal. Do NOT use markdown syntax like ** for bold, # for headings, or backticks for code blocks. Use CAPS or dashes for emphasis, plain numbered lists, and indentation for structure."
 
 have() { command -v "$1" >/dev/null 2>&1; }
 # When this script is used in a pipeline, stdin is not a TTY.
@@ -67,7 +71,25 @@ if [[ -z "${PROMPT}" ]]; then
   exit 0
 fi
 
+load_saved_key() {
+  if [[ -z "${OPENAI_API_KEY:-}" ]] && [[ -f "$KEY_FILE" ]]; then
+    OPENAI_API_KEY="$(cat "$KEY_FILE" 2>/dev/null || true)"
+    if [[ -n "${OPENAI_API_KEY:-}" ]]; then
+      export OPENAI_API_KEY
+      echo "Loaded API key from ${KEY_FILE}" >&2
+    fi
+  fi
+}
+
+save_key() {
+  printf '%s' "$OPENAI_API_KEY" > "$KEY_FILE"
+  chmod 600 "$KEY_FILE"
+  echo "API key saved to ${KEY_FILE} (chmod 600)" >&2
+}
+
 maybe_get_key() {
+  load_saved_key
+
   if [[ -n "${OPENAI_API_KEY:-}" ]]; then
     return 0
   fi
@@ -103,6 +125,12 @@ maybe_get_key() {
   if [[ -n "${key}" ]]; then
     OPENAI_API_KEY="${key}"
     export OPENAI_API_KEY
+    local save_ans=""
+    read -r -p "Save key for future runs? [Y/n] " save_ans </dev/tty || true
+    case "${save_ans}" in
+      n|N|no|NO) ;;
+      *) save_key ;;
+    esac
   fi
 }
 
@@ -135,15 +163,16 @@ if ! have python3; then
 fi
 
 payload="$(
-  PROMPT_TEXT="$PROMPT" python3 - <<'PY'
+  PROMPT_TEXT="$PROMPT" SYS_PROMPT_TEXT="$SYS_PROMPT" python3 - <<'PY'
 import json, os
 prompt = os.environ.get("PROMPT_TEXT", "")
+sys_prompt = os.environ.get("SYS_PROMPT_TEXT", "You help debug local Kubernetes + GPU tooling issues.")
 model = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
 data = {
   "model": model,
   "temperature": 0.2,
   "messages": [
-    {"role": "system", "content": "You help debug local Kubernetes + GPU tooling issues."},
+    {"role": "system", "content": sys_prompt},
     {"role": "user", "content": prompt},
   ],
 }
@@ -187,6 +216,79 @@ else
   echo "Raw response (truncated):"
   echo "$resp" | head -c 2000
   echo ""
+fi
+
+# Interactive follow-up loop
+if [[ -n "$extracted" ]] && can_prompt; then
+  CONV_MESSAGES="$(SYS_P="$SYS_PROMPT" USR_P="$PROMPT" ASST_P="$extracted" python3 - <<'PY'
+import json, os
+print(json.dumps([
+  {"role": "system",    "content": os.environ["SYS_P"]},
+  {"role": "user",      "content": os.environ["USR_P"]},
+  {"role": "assistant", "content": os.environ["ASST_P"]},
+]))
+PY
+  )"
+
+  echo ""
+  echo "Ask a follow-up question, or press Ctrl+C to exit."
+
+  trap 'echo ""; exit 0' INT
+
+  while true; do
+    echo ""
+    read -r -p "> " followup </dev/tty || break
+    [[ -z "$followup" ]] && continue
+
+    followup_payload="$(CONV="$CONV_MESSAGES" NEW_MSG="$followup" OPENAI_MODEL="$OPENAI_MODEL" python3 - <<'PY'
+import json, os
+msgs = json.loads(os.environ["CONV"])
+msgs.append({"role": "user", "content": os.environ["NEW_MSG"]})
+print(json.dumps({
+  "model": os.environ.get("OPENAI_MODEL", "gpt-4o-mini"),
+  "temperature": 0.2,
+  "messages": msgs,
+}))
+PY
+    )"
+
+    followup_resp="$(curl -sS \
+      -H "Authorization: Bearer ${OPENAI_API_KEY}" \
+      -H "Content-Type: application/json" \
+      --data "$followup_payload" \
+      "$OPENAI_API_URL" 2>&1)" || true
+
+    reply="$(RESP_TEXT="$followup_resp" python3 - <<'PY'
+import json, os
+s = os.environ.get("RESP_TEXT", "")
+try:
+    data = json.loads(s)
+except Exception:
+    print("")
+    raise SystemExit(0)
+try:
+    print((data.get("choices") or [{}])[0].get("message", {}).get("content", "") or "")
+except Exception:
+    print("")
+PY
+    )"
+
+    if [[ -n "$reply" ]]; then
+      echo ""
+      echo "$reply"
+      CONV_MESSAGES="$(CONV="$CONV_MESSAGES" USR="$followup" ASST="$reply" python3 - <<'PY'
+import json, os
+msgs = json.loads(os.environ["CONV"])
+msgs.append({"role": "user", "content": os.environ["USR"]})
+msgs.append({"role": "assistant", "content": os.environ["ASST"]})
+print(json.dumps(msgs))
+PY
+      )"
+    else
+      echo ""
+      echo "AI call failed. Try again or press Ctrl+C to exit."
+    fi
+  done
 fi
 
 exit 0

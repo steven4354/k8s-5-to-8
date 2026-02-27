@@ -1,0 +1,3 @@
+# API keys / secrets
+.openai-api-key
+.env

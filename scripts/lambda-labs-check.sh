@@ -121,11 +121,30 @@ echo "=========================================="
 echo ""
 
 # Prompt for OpenAI API key early so AI suggestions appear instantly after checks.
+KEY_FILE="${REPO_ROOT}/.openai-api-key"
+if [[ -z "${OPENAI_API_KEY:-}" ]] && [[ -f "$KEY_FILE" ]]; then
+  OPENAI_API_KEY="$(cat "$KEY_FILE" 2>/dev/null || true)"
+  if [[ -n "${OPENAI_API_KEY:-}" ]]; then
+    export OPENAI_API_KEY
+    echo "Loaded API key from ${KEY_FILE}" >&2
+  fi
+fi
 if [[ -z "${OPENAI_API_KEY:-}" ]] && [[ -t 1 ]] && [[ -r /dev/tty ]]; then
   read -r -p "Enable AI fix suggestions? Enter OPENAI_API_KEY (blank to skip): " -s _key </dev/tty || true
   echo "" >&2
   if [[ -n "${_key}" ]]; then
     export OPENAI_API_KEY="${_key}"
+    _save_ans=""
+    read -r -p "Save key for future runs? [Y/n] " _save_ans </dev/tty || true
+    case "${_save_ans}" in
+      n|N|no|NO) ;;
+      *)
+        printf '%s' "$OPENAI_API_KEY" > "$KEY_FILE"
+        chmod 600 "$KEY_FILE"
+        echo "API key saved to ${KEY_FILE} (chmod 600)" >&2
+        ;;
+    esac
+    unset _save_ans
   fi
   unset _key
 fi
@@ -316,14 +335,20 @@ echo "${REPO_ROOT}/scripts/p7.sh"
 echo "${REPO_ROOT}/scripts/p8.sh"
 echo ""
 
+if overall_ok; then
+  echo -e "${GREEN}Overall: PASS${NC} — this VM looks ready to run P5–P8."
+else
+  echo -e "${YELLOW}Overall: NOT READY${NC} — fix the FAIL items above, then rerun this script."
+fi
+echo ""
+
 if any_warn_or_fail; then
+  echo "Asking AI for fix suggestions..."
   emit_ai_prompt | bash "$SCRIPT_DIR/ai-suggest.sh" --title "AI Suggestions (Lambda Labs check)"
 fi
 
 if overall_ok; then
-  echo -e "${GREEN}Overall: PASS${NC} — this VM looks ready to run P5–P8."
   exit 0
 else
-  echo -e "${RED}Overall: FAIL${NC} — rerun after addressing the FAIL items."
   exit 1
 fi
