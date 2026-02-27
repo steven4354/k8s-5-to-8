@@ -16,6 +16,18 @@ set -uo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+EMIT_CHECKS=0
+while [[ "${1:-}" != "" ]]; do
+  case "$1" in
+    --emit-checks) EMIT_CHECKS=1; shift ;;
+    *) shift ;;
+  esac
+done
+
+# Only print when not in --emit-checks mode
+display()  { [[ "$EMIT_CHECKS" -eq 0 ]] && echo "$@" || true; }
+displaye() { [[ "$EMIT_CHECKS" -eq 0 ]] && echo -e "$@" || true; }
+
 # Toggles (set env vars before running)
 RUN_GPU_DOCKER_TEST="${RUN_GPU_DOCKER_TEST:-1}"          # docker run --gpus all ...
 RUN_NETWORK_TESTS="${RUN_NETWORK_TESTS:-1}"              # curl Docker Hub + Hugging Face
@@ -87,14 +99,7 @@ free_disk_gb_root() {
 
 emit_ai_prompt() {
   local i
-  echo "You are a DevOps + Kubernetes troubleshooting assistant."
-  echo "Given the following environment check results for a Lambda Labs GPU VM running a repo (k8s-5-to-8), suggest prioritized fixes."
-  echo ""
-  echo "Constraints:"
-  echo "- Be specific and actionable. Prefer 3-7 steps max."
-  echo "- Assume Ubuntu Linux on Lambda unless OS says otherwise."
-  echo "- If OS is not Linux, say that Kind+GPU workflows (P5) require Linux."
-  echo "- If you propose commands, keep them short and safe."
+  echo "Environment check results for a Lambda Labs GPU VM (k8s-5-to-8 repo)."
   echo ""
   echo "Repo root: ${REPO_ROOT}"
   echo "OS: ${os:-unknown}"
@@ -107,32 +112,27 @@ emit_ai_prompt() {
       echo "  debug: ${CHECK_DEBUG[$i]}"
     fi
   done
-  echo ""
-  echo "Return your answer as:"
-  echo "1) probable root cause(s)"
-  echo "2) recommended fix steps"
-  echo "3) verification commands"
 }
 
-echo "=========================================="
-echo "Lambda Labs Spot GPU VM Setup (P5–P8)"
-echo "Repo: ${REPO_ROOT}"
-echo "=========================================="
-echo ""
+display "=========================================="
+display "Lambda Labs Spot GPU VM Setup (P5–P8)"
+display "Repo: ${REPO_ROOT}"
+display "=========================================="
+display ""
 
-echo "### System"
+display "### System"
 os="$(uname -s 2>/dev/null || true)"
 arch="$(uname -m 2>/dev/null || true)"
-echo "OS:   $os"
-echo "Arch: $arch"
+display "OS:   $os"
+display "Arch: $arch"
 if [[ "$os" == "Linux" ]]; then
   add_check "PASS" "Linux host" ""
 else
   add_check "FAIL" "Linux host" "P5 (Kind+GPU) assumes a Linux GPU host"
 fi
-echo ""
+display ""
 
-echo "### GPU driver (host)"
+display "### GPU driver (host)"
 if have nvidia-smi; then
   if nvidia-smi -L >/dev/null 2>&1; then
     gpu="$(nvidia-smi -L 2>/dev/null | head -n 2 | tr '\n' '; ' | sed 's/; $//')"
@@ -144,9 +144,9 @@ if have nvidia-smi; then
 else
   add_check "FAIL" "nvidia-smi works" "missing (NVIDIA driver not installed)"
 fi
-echo ""
+display ""
 
-echo "### Docker"
+display "### Docker"
 docker_user_ok=0
 docker_sudo_ok=0
 if ! have docker; then
@@ -167,9 +167,9 @@ else
     fi
   fi
 fi
-echo ""
+display ""
 
-echo "### NVIDIA Container Toolkit (Docker GPU runtime)"
+display "### NVIDIA Container Toolkit (Docker GPU runtime)"
 if [[ "$RUN_GPU_DOCKER_TEST" != "1" ]]; then
   add_check "SKIP" "docker --gpus all works" "RUN_GPU_DOCKER_TEST=0"
 elif [[ "$docker_user_ok" -eq 1 ]]; then
@@ -188,9 +188,9 @@ elif [[ "$docker_sudo_ok" -eq 1 ]]; then
 else
   add_check "SKIP" "docker --gpus all works" "docker daemon not reachable yet"
 fi
-echo ""
+display ""
 
-echo "### Kubernetes toolchain (P5/P6/P8)"
+display "### Kubernetes toolchain (P5/P6/P8)"
 if have kubectl; then
   add_check "PASS" "kubectl installed" "$(kubectl version --client --short 2>/dev/null || echo kubectl)"
 else
@@ -208,9 +208,9 @@ if have helm; then
 else
   add_check "FAIL" "helm installed" "missing"
 fi
-echo ""
+display ""
 
-echo "### Build toolchain (P7)"
+display "### Build toolchain (P7)"
 if have go; then
   gv_raw="$(go env GOVERSION 2>/dev/null || true)"
   gv="${gv_raw#go}"
@@ -234,9 +234,9 @@ if have kubebuilder; then
 else
   add_check "WARN" "kubebuilder installed (optional)" "missing"
 fi
-echo ""
+display ""
 
-echo "### Disk + network (P6)"
+display "### Disk + network (P6)"
 free_gb="$(free_disk_gb_root)"
 if [[ -n "$free_gb" ]]; then
   if (( free_gb >= MIN_FREE_DISK_GB )); then
@@ -286,7 +286,20 @@ if [[ "$RUN_DOCKER_PULL_TESTS" == "1" ]]; then
 else
   add_check "SKIP" "docker pull vllm image (optional)" "RUN_DOCKER_PULL_TESTS=0"
 fi
-echo ""
+display ""
+
+# --emit-checks: output machine-readable results and exit
+if [[ "$EMIT_CHECKS" -eq 1 ]]; then
+  for i in "${!CHECK_STATUS[@]}"; do
+    _s="${CHECK_STATUS[$i]}" _l="${CHECK_LABEL[$i]}" _w="${CHECK_WHY[$i]}"
+    if [[ -n "$_w" ]]; then
+      echo "[${_s}] ${_l} -- ${_w}"
+    else
+      echo "[${_s}] ${_l}"
+    fi
+  done
+  if overall_ok; then exit 0; else exit 1; fi
+fi
 
 echo "=========================================="
 echo "Setup Summary"
@@ -312,13 +325,12 @@ else
 fi
 echo ""
 
-if any_warn_or_fail; then
-  echo "Asking AI for fix suggestions..."
-  emit_ai_prompt | bash "$SCRIPT_DIR/ai-suggest.sh" --title "AI Suggestions (Lambda Labs check)"
-fi
-
-if overall_ok; then
-  exit 0
-else
+if ! overall_ok; then
+  emit_ai_prompt | bash "${REPO_ROOT}/scripts/ai-suggest.sh" \
+    --run-fixes \
+    --recheck "bash '${REPO_ROOT}/scripts/lambda-labs-check.sh' --emit-checks" \
+    --title "AI Suggestions"
   exit 1
 fi
+
+exit 0
